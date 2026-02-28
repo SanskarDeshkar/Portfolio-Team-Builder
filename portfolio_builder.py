@@ -16,6 +16,9 @@ tickers_input = st.text_input("Ticker Symbols", "AAPL, MSFT, JNJ, XOM, GLD")
 # cleaning up the users text into a list of tickers
 tickers = [ticker.strip().upper() for ticker in tickers_input.split(",")]
 
+# input value for the user to enter how much they want to invest in the portfolio
+investment_amount = st.number_input("Enter the total amount you want to invest in the portfolio:", min_value=100.0, value=1000.0, step=100.0)
+
 # button to trigger the optimization process
 if st.button("Optimize the tickers"):
     st.write(f"Fetching data for: {', '.join(tickers)}")
@@ -71,7 +74,15 @@ if st.button("Optimize the tickers"):
     optimized = minimize(min_func_sharpe, initial_guess, method='SLSQP', bounds=bounds, constraints=constraints)
 
     # displaying the optimized portfolio weights
+
     st.write("### Optimized Portfolio Weights:")
-    results_df = pd.DataFrame({'Asset': tickers, 'Weight': optimized.x})
-    st.table(results_df.sort_values(by='Weight', ascending=False).reset_index(drop=True))
+    results_df = pd.DataFrame({
+        'Asset': tickers, 
+        'Weight (%)': (optimized.x * 100).round(2), # convert weights to percentages and round to 2 decimal places
+        'Cash to Invest ($)': (optimized.x * investment_amount).round(2) # calculate the cash to invest in each asset
+    }) 
+    df_display = results_df.sort_values(by='Weight (%)', ascending=False).reset_index(drop=True) # sort by weight and reset index
+    df_display["Weight (%)"] = df_display["Weight (%)"].map("{:.2f}%".format) # format weight as percentage string
+    df_display["Cash to Invest ($)"] = df_display["Cash to Invest ($)"].map("${:,.2f}".format) # format cash to invest as currency string
+    st.table(df_display) 
     st.success("Optimization complete.")
