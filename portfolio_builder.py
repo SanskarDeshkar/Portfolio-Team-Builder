@@ -5,6 +5,8 @@ import numpy as np
 from scipy.optimize import minimize
 import matplotlib.pyplot as plt
 
+# streamlit run portfolio_builder.py
+
 # setting the title and description of the app
 st.title("Quant Portfolio Team Builder")
 st.write("Draft the assets and optimize the risk.")
@@ -86,3 +88,22 @@ if st.button("Optimize the tickers"):
     df_display["Cash to Invest ($)"] = df_display["Cash to Invest ($)"].map("${:,.2f}".format) # format cash to invest as currency string
     st.table(df_display) 
     st.success("Optimization complete.")
+
+    # getting the final results for the optimized portfolio
+    p_return, p_volatility, sharpe_ratio = get_portfolio_performance(optimized.x)
+
+    # displaying the portfolio performance metrics
+    st.write(f"### Portfolio Performance:")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Expected Annual Return", f"{p_return * 100:.2f}%")
+    with col2:
+        st.metric("Annual Volatility (Risk)", f"{p_volatility * 100:.2f}%")
+    with col3:
+        st.metric("Sharpe Ratio", f"{sharpe_ratio:.2f}")
+
+    # brief explanation of the performance metrics
+    st.info(f"""**Interpretation:** - This portfolio expects a return of **{p_return * 100:.2f}%** per year based on historical data.
+        - The volatility of **{p_volatility * 100:.2f}%** represents the 'swing'—higher numbers mean a bumpier ride.
+        - A Sharpe Ratio of **{sharpe_ratio:.2f}** means you are getting a solid amount of return for the risk you're taking.
+        """)
