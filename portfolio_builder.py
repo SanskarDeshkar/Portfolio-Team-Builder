@@ -75,8 +75,7 @@ if st.button("Optimize the tickers"):
     initial_guess = len(tickers) * [1. / len(tickers)] # start with equal weights
     optimized = minimize(min_func_sharpe, initial_guess, method='SLSQP', bounds=bounds, constraints=constraints)
 
-    # displaying the optimized portfolio weights
-
+    # displaying the optimized portfolio weights and the cash to invest in each asset
     st.write("### Optimized Portfolio Weights:")
     results_df = pd.DataFrame({
         'Asset': tickers, 
@@ -88,6 +87,33 @@ if st.button("Optimize the tickers"):
     df_display["Cash to Invest ($)"] = df_display["Cash to Invest ($)"].map("${:,.2f}".format) # format cash to invest as currency string
     st.table(df_display) 
     st.success("Optimization complete.")
+    
+    # downloading S&P 500 data for comparison
+    spy_data = yf.download("SPY", period="5y")["Close"].dropna()
+
+    # calculating the cumulative returns for the assets and S&P 500 (starting both at $1.00)
+    portfolio_cumulative = (1 + returns.dot(optimized.x)).cumprod() # cumulative returns of the optimized portfolio
+    spy_cumulative = (1 + spy_data.pct_change().dropna()).cumprod() # cumulative returns of the S&P 500
+
+    # plotting the cumulative returns of the optimized portfolio vs S&P 500
+    st.subheader("Optimized Portfolio vs S&P 500")
+    fig2, ax2 = plt.subplots(figsize=(10, 5), facecolor="#0f1116")
+    ax2.set_facecolor("#0f1116")
+    ax2.plot(portfolio_cumulative, label="Optimized Portfolio", color="#1f77b4", linewidth=2)
+    ax2.plot(spy_cumulative, label="S&P 500 (SPY)", color="#ff7f0e", linewidth=2)
+    ax2.set_title("Portfolio Performance vs S&P 500", color="white")
+    ax2.set_xlabel("Date", color="white")
+    ax2.set_ylabel("Cumulative Return", color="white")
+    ax2.legend(facecolor="#0f1116", frameon=False, loc="upper left", labelcolor="white")
+    ax2.tick_params(colors="white")
+    for spine in ax2.spines.values():
+        spine.set_color("white")
+    st.pyplot(fig2)
+
+    if portfolio_cumulative.iloc[-1].item() > spy_cumulative.iloc[-1].item():
+        st.success("Your optimized portfolio outperformed the S&P 500 over the last 5 years.")
+    else:
+        st.warning("Your optimized portfolio underperformed the S&P 500 over the last 5 years.")
 
     # getting the final results for the optimized portfolio
     p_return, p_volatility, sharpe_ratio = get_portfolio_performance(optimized.x)
