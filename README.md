@@ -36,4 +36,4 @@ The objective function maximizes the Sharpe Ratio:
 
 $$Sharpe Ratio = \frac{R_p - R_f}{\sigma_p}$$
 
-Where R_p represents the expected portfolio return and \sigma_p represents the portfolio standard deviation.
+Where $R_p$ represents the expected portfolio return and $\sigma_p$ represents the portfolio standard deviation.
