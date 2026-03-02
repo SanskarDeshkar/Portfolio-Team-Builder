@@ -12,7 +12,7 @@ A Python-based utility for financial portfolio construction and risk management.
 ## Key Features
 * **Interactive Risk Slider**: Allows users to toggle between Low, Medium, and High risk tolerances, dynamically injecting new constraints into the mathematical model.
 * **Rebalancing Summary**: Generates a 'Trade List' that quantifies the dollar shift (Delta) required to move from a baseline portfolio to a risk-adjusted one.
-* **Automated Interpretation**: Provides a real-time natural language explanation (via st.info) of the optimizer's actions based on the resulting capital shifts.
+* **Automated Interpretation**: Provides a real-time natural language explanation of the optimizer's actions based on the resulting capital shifts.
 
 ## Tech Stack
 * **Language**: Python 3.12
@@ -41,7 +41,7 @@ The objective function maximizes the Sharpe Ratio:
 
 $$Sharpe Ratio = \frac{R_p - R_f}{\sigma_p}$$
 
-Where $\R_p$ represents the expected portfolio return and $\sigma_p$ represents the portfolio standard deviation.
+Where $R_p$ represents the expected portfolio return and $\sigma_p$ represents the portfolio standard deviation.
 
 ### Risk Constraint
 When a risk limit is active, the optimizer satisfies:
