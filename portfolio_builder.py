@@ -21,6 +21,16 @@ tickers = [ticker.strip().upper() for ticker in tickers_input.split(",")]
 # input value for the user to enter how much they want to invest in the portfolio
 investment_amount = st.number_input("Enter the total amount you want to invest in the portfolio:", min_value=100.0, value=1000.0, step=100.0)
 
+# inpit value for the user to enter the risk tolerance level
+st.subheader("Select your risk tolerance level:")
+risk_tolerance = st.select_slider("Risk Tolerance", options=["Low (Stable)", "Medium (Balanced)", "High (Aggressive)"], value="Medium (Balanced)")
+risk_mapping = {
+    "Low (Stable)": 0.15, # more weight on low-risk assets
+    "Medium (Balanced)": 0.25, # balanced risk
+    "High (Aggressive)": 0.4 # more weight on high-risk assets
+}
+target_vola = risk_mapping[risk_tolerance] # setting the target volatility based on user selection
+
 # button to trigger the optimization process
 if st.button("Optimize the tickers"):
     st.write(f"Fetching data for: {', '.join(tickers)}")
@@ -70,11 +80,26 @@ if st.button("Optimize the tickers"):
         return -get_portfolio_performance(weights)[2] # we want to maximize the Sharpe ratio, so we minimize its negative
 
     # constraints: weights must sum to 100% (1.0)
-    constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+    constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1}, {"type": "ineq", "fun": lambda x: target_vola - get_portfolio_performance(x)[1]}) # adding risk constraint based on user selection
     bounds = tuple((0, 1) for x in range(len(tickers))) # weights must be between 0 and 1
     initial_guess = len(tickers) * [1. / len(tickers)] # start with equal weights
     optimized = minimize(min_func_sharpe, initial_guess, method='SLSQP', bounds=bounds, constraints=constraints)
-
+    natural_result = minimize(
+        min_func_sharpe,
+        initial_guess,
+        method='SLSQP',
+        bounds=bounds,
+        constraints=({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+    )
+    initial_max_sharpe_weights = natural_result.x
+    risk_adjusted_weights = minimize(
+        min_func_sharpe,
+        initial_guess,
+        method='SLSQP',
+        bounds=bounds,
+        constraints=constraints
+    )
+    optimized_weights = risk_adjusted_weights.x
     # displaying the optimized portfolio weights and the cash to invest in each asset
     st.write("### Optimized Portfolio Weights:")
     results_df = pd.DataFrame({
@@ -88,6 +113,39 @@ if st.button("Optimize the tickers"):
     st.table(df_display) 
     st.success("Optimization complete.")
     
+    # calculating a baseline
+    baseline_weights = initial_max_sharpe_weights
+
+    # calculating the difference in weights between the optimized portfolio and the baseline
+    rebalance_df = pd.DataFrame({
+        'Ticker': tickers,
+        'Baseline ($)': (baseline_weights * investment_amount).round(2),
+        'Risk-Adjusted ($)': (optimized_weights * investment_amount).round(2)
+    })
+    rebalance_df['Shift ($)'] = rebalance_df['Risk-Adjusted ($)'] - rebalance_df['Baseline ($)']
+
+    # displaying the summary
+    st.subheader("Rebalance Summary")
+    st.write("This table shows how much you would invest in each asset based on the baseline (max Sharpe ratio) vs the risk-adjusted optimized portfolio, along with the shift in dollars.")
+    st.table(rebalance_df.style.format({
+        'Baseline ($)': '${:,.2f}',
+        'Risk-Adjusted ($)': '${:,.2f}',
+        'Shift ($)': '${:,.2f}'
+    }))
+
+    # interpreting the data
+    total_shift = rebalance_df['Shift ($)'].abs().sum()
+    if total_shift < 0.01:
+        st.info(
+            "The optimized portfolio is very similar to the baseline max Sharpe ratio portfolio, with minimal shifts in allocation. "
+            "This suggests that the risk constraint did not significantly alter the optimal weights, and the baseline portfolio already meets the risk tolerance level."
+        )
+    else:
+        st.info(
+            f"The optimized portfolio has a total shift of ${total_shift:,.2f} compared to the baseline max Sharpe ratio portfolio. "
+            "This indicates that the risk constraint led to significant changes in the asset allocations, suggesting that the baseline portfolio may have exceeded the user's risk tolerance level."
+        )
+
     # downloading S&P 500 data for comparison
     spy_data = yf.download("SPY", period="5y")["Close"].dropna()
 
