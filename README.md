@@ -15,7 +15,7 @@ A Python-based utility for financial portfolio construction and risk management.
 * **Automated Interpretation**: Provides a real-time natural language explanation of the optimizer's actions based on the resulting capital shifts.
 
 ## Tech Stack
-* **Language**: Python 3.12
+* **Language**: Python 3.14
 * **Numerical Libraries**: NumPy, Pandas, SciPy
 * **Web Framework**: Streamlit
 * **Visualization**: Matplotlib

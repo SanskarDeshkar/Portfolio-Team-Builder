@@ -25,11 +25,15 @@ investment_amount = st.number_input("Enter the total amount you want to invest i
 st.subheader("Select your risk tolerance level:")
 risk_tolerance = st.select_slider("Risk Tolerance", options=["Low (Stable)", "Medium (Balanced)", "High (Aggressive)"], value="Medium (Balanced)")
 risk_mapping = {
-    "Low (Stable)": 0.15, # more weight on low-risk assets
-    "Medium (Balanced)": 0.25, # balanced risk
-    "High (Aggressive)": 0.4 # more weight on high-risk assets
+    "Low (Stable)": 0.1, # more weight on low-risk assets
+    "Medium (Balanced)": 0.18, # balanced risk
+    "High (Aggressive)": 0.30 # more weight on high-risk assets
 }
 target_vola = risk_mapping[risk_tolerance] # setting the target volatility based on user selection
+
+# sidebar input for the user to determine trading cost
+st.sidebar.subheader("Trading Parameters")
+fee_percent = st.sidebar.number_input("Trading Fee (%)", min_value=0.0, max_value=2.0, value=0.1, step=0.05) / 100 # converting percentage to decimal
 
 # button to trigger the optimization process
 if st.button("Optimize the tickers"):
@@ -100,6 +104,7 @@ if st.button("Optimize the tickers"):
         constraints=constraints
     )
     optimized_weights = risk_adjusted_weights.x
+
     # displaying the optimized portfolio weights and the cash to invest in each asset
     st.write("### Optimized Portfolio Weights:")
     results_df = pd.DataFrame({
@@ -122,7 +127,9 @@ if st.button("Optimize the tickers"):
         'Baseline ($)': (baseline_weights * investment_amount).round(2),
         'Risk-Adjusted ($)': (optimized_weights * investment_amount).round(2)
     })
-    rebalance_df['Shift ($)'] = rebalance_df['Risk-Adjusted ($)'] - rebalance_df['Baseline ($)']
+    rebalance_df['Shift ($)'] = rebalance_df['Risk-Adjusted ($)'] - rebalance_df['Baseline ($)'] # calculating the shift in dollars between the baseline and optimized portfolio
+    rebalance_df['Trading Cost ($)'] = rebalance_df['Shift ($)'].abs() * fee_percent # calculating the trading cost based on the shift and the fee percentage
+    rebalance_df['Net Shift ($)'] = rebalance_df['Shift ($)'] - rebalance_df['Trading Cost ($)'] # calculating the net shift after accounting for trading costs
 
     # displaying the summary
     st.subheader("Rebalance Summary")
@@ -130,8 +137,21 @@ if st.button("Optimize the tickers"):
     st.table(rebalance_df.style.format({
         'Baseline ($)': '${:,.2f}',
         'Risk-Adjusted ($)': '${:,.2f}',
-        'Shift ($)': '${:,.2f}'
+        'Shift ($)': '${:,.2f}',
+        'Trading Cost ($)': '${:,.2f}',
+        'Net Shift ($)': '${:,.2f}'
     }))
+
+    # execution note warning box
+    total_fees = rebalance_df['Trading Cost ($)'].sum()
+    if total_fees > 0.01:
+        st.warning(f"Total trading costs for this rebalance will be ${total_fees:,.2f}.")
+
+    # final logic check to determine if the optimized portfolio is significantly different from the baseline and provide insights to the user
+    net_invested_capital = investment_amount - total_fees
+    st.divider()
+    st.metric("Total Rebalancing Cost", f"${total_fees:,.2f}", delta=f"{fee_percent*100:,.2f}% Fee", delta_color="inverse")
+    st.write(f"**Net Invested Capital after Rebalancing Costs:** ${net_invested_capital:,.2f}")
 
     # interpreting the data
     total_shift = rebalance_df['Shift ($)'].abs().sum()
