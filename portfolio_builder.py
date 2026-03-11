@@ -206,8 +206,38 @@ if st.button("Optimize the tickers"):
     with col3:
         st.metric("Sharpe Ratio", f"{sharpe_ratio:.2f}")
 
+    # risk attribution logic to explain the performance metrics in more detail
+    st.subheader("Individual Risk Attribution")
+    weights = optimized.x
+    portfolio_vol = get_portfolio_performance(weights)[1] # overall portfolio volatility (risk)
+    marginal_risk = np.dot(cov_matrix, weights) / portfolio_vol # marginal risk contribution of each asset to the overall portfolio risk
+
+    component_risk = weights * marginal_risk # component risk contribution of each asset (weight * marginal risk)
+    percent_contribution = component_risk / portfolio_vol * 100 # percentage contribution to overall portfolio risk
+
+    risk_df = pd.DataFrame({
+        'Asset': tickers,
+        'Risk Contribution (%)': percent_contribution.round(2)
+    }).sort_values(by='Risk Contribution (%)', ascending=False).reset_index(drop=True)
+
+    fig3, ax3 = plt.subplots(figsize=(10, 5), facecolor="#0f1116")
+    ax3.set_facecolor("#0f1116")
+    bars = ax3.bar(risk_df['Asset'], risk_df['Risk Contribution (%)'], color="#1f77b4")
+    ax3.set_title("Individual Asset Risk Contribution", color="white")
+    ax3.set_ylabel("Percentage of Portfolio Risk", color="white")
+    ax3.tick_params(colors="white")
+    for spine in ax3.spines.values():
+        spine.set_color("white")
+    st.pyplot(fig3)
+    
+    max_risk_asset = risk_df.iloc[0]["Asset"]
+    max_risk_val = risk_df.iloc[0]["Risk Contribution (%)"]
+
     # brief explanation of the performance metrics
-    st.info(f"""**Interpretation:** - This portfolio expects a return of **{p_return * 100:.2f}%** per year based on historical data.
-        - The volatility of **{p_volatility * 100:.2f}%** represents the 'swing'—higher numbers mean a bumpier ride.
-        - A Sharpe Ratio of **{sharpe_ratio:.2f}** means you are getting a solid amount of return for the risk you're taking.
-        """)
+    st.info(f"""
+    **Portfolio Interpretation:**
+    - **Annual Return:** Expected **{p_return * 100:.2f}%** based on 5-year historical trends.
+    - **Volatility:** At **{p_volatility * 100:.2f}%**, this represents the 'standard deviation' or the expected price swing.
+    - **Sharpe Ratio:** A score of **{sharpe_ratio:.2f}** indicates your return efficiency per unit of risk.
+    - **Primary Risk Driver:** **{max_risk_asset}** is responsible for **{max_risk_val}%** of your total risk.
+    """)
