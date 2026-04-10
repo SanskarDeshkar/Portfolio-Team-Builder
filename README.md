@@ -8,11 +8,14 @@ A Python-based utility for financial portfolio construction and risk management.
 * **Dual-Pass Optimization**: Executes a baseline 'Natural' optimization and a second 'Constrained' optimization to quantify capital migration.
 * **Data Sourcing**: Integration with yfinance for five-year historical closing price retrieval.
 * **Benchmarking**: Provides direct comparison against the S&P 500 (SPY) using normalized cumulative returns.
+* **Market Friction Modeling**: Accounts for transaction costs per trade to calculate net capital invested and identify alpha drag.
+* **Risk Attribution (MCR)**: Utilizes the Margincal Contributuon to Risk (MCR) matrix to identify which specific assets increase total portfolio volatility.
 
 ## Key Features
 * **Interactive Risk Slider**: Allows users to toggle between Low, Medium, and High risk tolerances, dynamically injecting new constraints into the mathematical model.
 * **Rebalancing Summary**: Generates a 'Trade List' that quantifies the dollar shift (Delta) required to move from a baseline portfolio to a risk-adjusted one.
 * **Automated Interpretation**: Provides a real-time natural language explanation of the optimizer's actions based on the resulting capital shifts.
+
 
 ## Tech Stack
 * **Language**: Python 3.14
@@ -46,6 +49,10 @@ Where $R_p$ represents the expected portfolio return and $\sigma_p$ represents t
 ### Risk Constraint
 When a risk limit is active, the optimizer satisfies:
 $$\sigma_{portfolio} \leq \sigma_{target}$$
+
+### Risk Attribution
+The contribution of each asset __i__ to total risk is calculated as:
+
 
 ## Portfolio Interpretation
 The application provides a comparative analysis between the Unconstrained Max Sharpe Ratio (Baseline) and the Constrained Risk-Adjusted Portfolio.
