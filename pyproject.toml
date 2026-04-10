@@ -1,0 +1,18 @@
+[project]
+name = "portfolio-team-builder"
+version = "0.1.0"
+description = "Streamlit app for portfolio optimization and risk-adjusted rebalancing."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "scipy",
+    "streamlit",
+    "yfinance",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

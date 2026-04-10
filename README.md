@@ -1,61 +1,99 @@
 # Quant Portfolio Optimizer (Team Builder)
 
-A Python-based utility for financial portfolio construction and risk management. This application utilizes historical market data to determine asset weightings that maximize the risk-adjusted return (Sharpe Ratio) of a given portfolio while respecting user-defined volatility constraints.
+A Streamlit app for portfolio construction, risk-constrained optimization, and rebalancing analysis. The app pulls historical market data, computes annualized return and volatility statistics, and uses SLSQP optimization to build a maximum-Sharpe portfolio that can also respect a user-selected volatility ceiling.
 
-## Technical Specifications
-* **Optimization Logic**: Implements the Sequential Least Squares Programming (SLSQP) algorithm via scipy.optimize to find the Maximum Sharpe Ratio.
-* **Risk Constraint Engine**: Employs a custom inequality constraint ($$Target \sigma - Portfolio \sigma \geq 0$$) to ensure the final portfolio does not exceed the user's selected volatility threshold.
-* **Dual-Pass Optimization**: Executes a baseline 'Natural' optimization and a second 'Constrained' optimization to quantify capital migration.
-* **Data Sourcing**: Integration with yfinance for five-year historical closing price retrieval.
-* **Benchmarking**: Provides direct comparison against the S&P 500 (SPY) using normalized cumulative returns.
-* **Market Friction Modeling**: Accounts for transaction costs per trade to calculate net capital invested and identify alpha drag.
-* **Risk Attribution (MCR)**: Utilizes the Margincal Contributuon to Risk (MCR) matrix to identify which specific assets increase total portfolio volatility.
+## Current State
 
-## Key Features
-* **Interactive Risk Slider**: Allows users to toggle between Low, Medium, and High risk tolerances, dynamically injecting new constraints into the mathematical model.
-* **Rebalancing Summary**: Generates a 'Trade List' that quantifies the dollar shift (Delta) required to move from a baseline portfolio to a risk-adjusted one.
-* **Automated Interpretation**: Provides a real-time natural language explanation of the optimizer's actions based on the resulting capital shifts.
+This project now includes:
 
+- A runnable Streamlit app in `portfolio_builder.py`
+- Python project metadata in `pyproject.toml`
+- Dependency install support in `requirements.txt`
+- A basic repo setup for local virtual environment workflows
+
+This repository was also updated through a Codex editing pass. That pass injected a cleanup and hardening layer into the project, especially inside `portfolio_builder.py`, without changing the app's core purpose.
+
+## What The App Does
+
+- Accepts a custom basket of ticker symbols
+- Downloads approximately five years of adjusted price history with `yfinance`
+- Builds an unconstrained maximum-Sharpe baseline portfolio
+- Builds a risk-adjusted portfolio using the selected volatility target
+- Computes dollar allocations from the user's investment amount
+- Estimates trading costs for the rebalance
+- Compares portfolio performance against `SPY`
+- Breaks down each asset's contribution to total portfolio risk
 
 ## Tech Stack
-* **Language**: Python 3.14
-* **Numerical Libraries**: NumPy, Pandas, SciPy
-* **Web Framework**: Streamlit
-* **Visualization**: Matplotlib
 
-## Implementation
+- **Language**: Python 3.11+
+- **App Framework**: Streamlit
+- **Data Source**: yfinance
+- **Numerical Libraries**: NumPy, Pandas, SciPy
+- **Visualization**: Matplotlib
+
+## Setup
+
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/SanskarDeshkar/Portfolio-Team-Builder.git
+cd Portfolio-Team-Builder
 ```
 
-2. Install required packages:
+2. Create and activate a virtual environment:
+
 ```bash
-pip install streamlit yfinance pandas numpy scipy matplotlib
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
-3. Execute the application:
+3. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+4. Run the app:
+
 ```bash
 streamlit run portfolio_builder.py
 ```
 
-## Mathematical Framework
-The objective function maximizes the Sharpe Ratio:
+## Optimization Model
 
-$$Sharpe Ratio = \frac{R_p - R_f}{\sigma_p}$$
+The app maximizes the Sharpe Ratio:
 
-Where $R_p$ represents the expected portfolio return and $\sigma_p$ represents the portfolio standard deviation.
+$$
+Sharpe Ratio = \frac{R_p}{\sigma_p}
+$$
 
-### Risk Constraint
-When a risk limit is active, the optimizer satisfies:
-$$\sigma_{portfolio} \leq \sigma_{target}$$
+Where:
 
-### Risk Attribution
-The contribution of each asset __i__ to total risk is calculated as:
+- $R_p$ is the annualized expected portfolio return
+- $\sigma_p$ is the annualized portfolio volatility
 
+The constrained portfolio additionally enforces:
 
-## Portfolio Interpretation
-The application provides a comparative analysis between the Unconstrained Max Sharpe Ratio (Baseline) and the Constrained Risk-Adjusted Portfolio.
+$$
+\sigma_{portfolio} \leq \sigma_{target}
+$$
 
-* **Capital Allocation**: Values represent the exact USD amount to be invested in each ticker based on the provided principal.
-* **Rebalancing Delta**: The 'Shift' column quantifies the capital migration required to satisfy user volatility constraints. A non-zero shift indicates the baseline portfolio exceeded the target risk threshold and was recalibrated for stability.
+## Outputs
+
+When the optimization succeeds, the app renders:
+
+- Historical price charts for the selected assets
+- Optimized portfolio weights
+- Dollar allocation per asset
+- Baseline vs. risk-adjusted rebalance summary
+- Estimated trading cost impact
+- Portfolio vs. `SPY` cumulative performance comparison
+- Annual return, volatility, and Sharpe metrics
+- Individual asset risk contribution chart
+
+## Notes
+
+- The optimization is long-only, with weights bounded between `0` and `1`
+- All portfolio statistics are based on historical price data and should not be treated as forward-looking guarantees
+- The benchmark comparison depends on `SPY` data being available and alignable with the selected portfolio history

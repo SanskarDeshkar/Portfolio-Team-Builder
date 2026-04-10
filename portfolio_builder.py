@@ -1,243 +1,477 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import streamlit as st
 import yfinance as yf
-import pandas as pd
-import numpy as np
-from scipy.optimize import minimize
-import matplotlib.pyplot as plt
+from scipy.optimize import OptimizeResult, minimize
 
-# streamlit run portfolio_builder.py
-
-# setting the title and description of the app
-st.title("Quant Portfolio Team Builder")
-st.write("Draft the assets and optimize the risk.")
-
-# input for the user to enter the ticker symbols
-st.subheader("Enter the ticker symbols of the assets you want to include in your portfolio (separated by commas):")
-tickers_input = st.text_input("Ticker Symbols", "AAPL, MSFT, JNJ, XOM, GLD")
-
-# cleaning up the users text into a list of tickers
-tickers = [ticker.strip().upper() for ticker in tickers_input.split(",")]
-
-# input value for the user to enter how much they want to invest in the portfolio
-investment_amount = st.number_input("Enter the total amount you want to invest in the portfolio:", min_value=100.0, value=1000.0, step=100.0)
-
-# inpit value for the user to enter the risk tolerance level
-st.subheader("Select your risk tolerance level:")
-risk_tolerance = st.select_slider("Risk Tolerance", options=["Low (Stable)", "Medium (Balanced)", "High (Aggressive)"], value="Medium (Balanced)")
-risk_mapping = {
-    "Low (Stable)": 0.1, # more weight on low-risk assets
-    "Medium (Balanced)": 0.18, # balanced risk
-    "High (Aggressive)": 0.30 # more weight on high-risk assets
+TRADING_DAYS = 252
+DEFAULT_TICKERS = "AAPL, MSFT, JNJ, XOM, GLD"
+RISK_MAPPING = {
+    "Low (Stable)": 0.10,
+    "Medium (Balanced)": 0.18,
+    "High (Aggressive)": 0.30,
 }
-target_vola = risk_mapping[risk_tolerance] # setting the target volatility based on user selection
+PLOT_BACKGROUND = "#0f1116"
+PORTFOLIO_COLOR = "#1f77b4"
+BENCHMARK_COLOR = "#ff7f0e"
 
-# sidebar input for the user to determine trading cost
-st.sidebar.subheader("Trading Parameters")
-fee_percent = st.sidebar.number_input("Trading Fee (%)", min_value=0.0, max_value=2.0, value=0.1, step=0.05) / 100 # converting percentage to decimal
 
-# button to trigger the optimization process
-if st.button("Optimize the tickers"):
-    st.write(f"Fetching data for: {', '.join(tickers)}")
+def parse_tickers(raw_input: str) -> list[str]:
+    seen = set()
+    tickers = []
+    for value in raw_input.split(","):
+        ticker = value.strip().upper()
+        if ticker and ticker not in seen:
+            tickers.append(ticker)
+            seen.add(ticker)
+    return tickers
 
-    data = yf.download(tickers, period="5y")["Close"] # downloading the historical closing prices for the tickers
-    data = data.dropna() # dropping any rows with missing values
 
-    st.subheader("Asset Performance Data") # displaying the historical closing prices of the assets
-    
-    # line chart of the asset performance
-    fig, ax = plt.subplots(figsize=(10, 5), facecolor="#0f1116")
-    ax.set_facecolor("#0f1116")
-    data.plot(ax=ax)
-    ax.set_title("Historical Closing Prices", color="white")
-    ax.set_xlabel("Date", color="white")
-    ax.set_ylabel("Price", color="white")
+def ensure_dataframe(data: pd.Series | pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    if isinstance(data, pd.Series):
+        column_name = columns[0] if columns else data.name or "Asset"
+        return data.to_frame(name=column_name)
+
+    if isinstance(data.columns, pd.MultiIndex):
+        if "Close" in data.columns.get_level_values(0):
+            data = data["Close"]
+        elif "Adj Close" in data.columns.get_level_values(0):
+            data = data["Adj Close"]
+
+    return data.copy()
+
+
+@st.cache_data(show_spinner=False)
+def download_prices(tickers: tuple[str, ...], period: str = "5y") -> pd.DataFrame:
+    downloaded = yf.download(
+        list(tickers),
+        period=period,
+        progress=False,
+        auto_adjust=True,
+        threads=False,
+    )
+    prices = ensure_dataframe(downloaded, list(tickers))
+    prices = prices.reindex(columns=list(tickers))
+    return prices.dropna(axis=1, how="all")
+
+
+def prepare_price_history(tickers: list[str]) -> tuple[pd.DataFrame | None, list[str]]:
+    prices = download_prices(tuple(tickers))
+    missing_tickers = [ticker for ticker in tickers if ticker not in prices.columns]
+
+    if prices.empty:
+        return None, tickers
+
+    cleaned = prices.dropna(axis=0, how="any")
+    if cleaned.empty:
+        return None, missing_tickers
+
+    return cleaned, missing_tickers
+
+
+def annualized_statistics(price_history: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
+    returns = price_history.pct_change().dropna()
+    mean_returns = returns.mean() * TRADING_DAYS
+    covariance = returns.cov() * TRADING_DAYS
+    return returns, mean_returns, covariance
+
+
+def portfolio_performance(
+    weights: np.ndarray,
+    mean_returns: pd.Series,
+    covariance: pd.DataFrame,
+) -> tuple[float, float, float]:
+    portfolio_return = float(np.dot(mean_returns.values, weights))
+    variance = float(weights.T @ covariance.values @ weights)
+    portfolio_volatility = float(np.sqrt(max(variance, 0.0)))
+    if portfolio_volatility <= 1e-10:
+        sharpe_ratio = -np.inf
+    else:
+        sharpe_ratio = portfolio_return / portfolio_volatility
+    return portfolio_return, portfolio_volatility, sharpe_ratio
+
+
+def normalize_weights(weights: np.ndarray) -> np.ndarray:
+    clipped = np.clip(np.asarray(weights, dtype=float), 0.0, 1.0)
+    total = clipped.sum()
+    if total <= 0:
+        raise ValueError("Optimizer returned non-positive total weight.")
+    return clipped / total
+
+
+def optimize_weights(
+    mean_returns: pd.Series,
+    covariance: pd.DataFrame,
+    target_volatility: float | None = None,
+) -> tuple[np.ndarray, OptimizeResult]:
+    asset_count = len(mean_returns)
+    bounds = tuple((0.0, 1.0) for _ in range(asset_count))
+    initial_guess = np.full(asset_count, 1.0 / asset_count)
+
+    def objective(weights: np.ndarray) -> float:
+        return -portfolio_performance(weights, mean_returns, covariance)[2]
+
+    constraints = [{"type": "eq", "fun": lambda x: np.sum(x) - 1.0}]
+    if target_volatility is not None:
+        constraints.append(
+            {
+                "type": "ineq",
+                "fun": lambda x: target_volatility - portfolio_performance(x, mean_returns, covariance)[1],
+            }
+        )
+
+    result = minimize(
+        objective,
+        initial_guess,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints,
+        options={"maxiter": 500},
+    )
+    if not result.success:
+        raise ValueError(result.message)
+
+    return normalize_weights(result.x), result
+
+
+def minimize_volatility(covariance: pd.DataFrame) -> tuple[np.ndarray, float]:
+    asset_count = len(covariance)
+    bounds = tuple((0.0, 1.0) for _ in range(asset_count))
+    initial_guess = np.full(asset_count, 1.0 / asset_count)
+
+    def objective(weights: np.ndarray) -> float:
+        variance = float(weights.T @ covariance.values @ weights)
+        return float(np.sqrt(max(variance, 0.0)))
+
+    result = minimize(
+        objective,
+        initial_guess,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=[{"type": "eq", "fun": lambda x: np.sum(x) - 1.0}],
+        options={"maxiter": 500},
+    )
+    if not result.success:
+        raise ValueError(result.message)
+
+    weights = normalize_weights(result.x)
+    min_volatility = objective(weights)
+    return weights, min_volatility
+
+
+def build_allocation_table(tickers: list[str], weights: np.ndarray, investment_amount: float) -> pd.DataFrame:
+    results = pd.DataFrame(
+        {
+            "Asset": tickers,
+            "Weight (%)": weights * 100,
+            "Cash to Invest ($)": weights * investment_amount,
+        }
+    ).sort_values(by="Weight (%)", ascending=False, ignore_index=True)
+    return results
+
+
+def build_rebalance_table(
+    tickers: list[str],
+    baseline_weights: np.ndarray,
+    optimized_weights: np.ndarray,
+    investment_amount: float,
+    fee_percent: float,
+) -> pd.DataFrame:
+    rebalance_df = pd.DataFrame(
+        {
+            "Ticker": tickers,
+            "Baseline ($)": baseline_weights * investment_amount,
+            "Risk-Adjusted ($)": optimized_weights * investment_amount,
+        }
+    )
+    rebalance_df["Shift ($)"] = rebalance_df["Risk-Adjusted ($)"] - rebalance_df["Baseline ($)"]
+    rebalance_df["Trading Cost ($)"] = rebalance_df["Shift ($)"].abs() * fee_percent
+    rebalance_df["Net Shift ($)"] = rebalance_df["Shift ($)"] - rebalance_df["Trading Cost ($)"]
+    return rebalance_df
+
+
+def build_risk_contribution_table(
+    tickers: list[str],
+    weights: np.ndarray,
+    covariance: pd.DataFrame,
+    portfolio_volatility: float,
+) -> pd.DataFrame:
+    if portfolio_volatility <= 1e-10:
+        contributions = np.zeros(len(tickers))
+    else:
+        marginal_risk = covariance.values @ weights / portfolio_volatility
+        component_risk = weights * marginal_risk
+        contributions = component_risk / portfolio_volatility * 100
+
+    return pd.DataFrame(
+        {
+            "Asset": tickers,
+            "Risk Contribution (%)": np.round(contributions, 2),
+        }
+    ).sort_values(by="Risk Contribution (%)", ascending=False, ignore_index=True)
+
+
+def create_dark_chart(figsize: tuple[int, int] = (10, 5)) -> tuple[plt.Figure, plt.Axes]:
+    fig, ax = plt.subplots(figsize=figsize, facecolor=PLOT_BACKGROUND)
+    ax.set_facecolor(PLOT_BACKGROUND)
     ax.tick_params(colors="white")
     for spine in ax.spines.values():
         spine.set_color("white")
-    legend = ax.legend(loc="upper left", frameon=False)
-    ax.set_xlim(data.index.min(), data.index.max())
-    plt.setp(legend.get_texts(), color="white")
-    st.pyplot(fig)
+    return fig, ax
 
-    st.write(data)
+
+def plot_price_history(price_history: pd.DataFrame) -> None:
+    fig, ax = create_dark_chart()
+    price_history.plot(ax=ax, linewidth=2)
+    ax.set_title("Historical Closing Prices", color="white")
+    ax.set_xlabel("Date", color="white")
+    ax.set_ylabel("Price", color="white")
+    legend = ax.legend(loc="upper left", frameon=False)
+    if legend is not None:
+        plt.setp(legend.get_texts(), color="white")
+    st.pyplot(fig)
+    plt.close(fig)
+
+
+def plot_benchmark_comparison(portfolio_cumulative: pd.Series, spy_cumulative: pd.Series) -> None:
+    fig, ax = create_dark_chart()
+    ax.plot(portfolio_cumulative.index, portfolio_cumulative.values, label="Optimized Portfolio", color=PORTFOLIO_COLOR, linewidth=2)
+    ax.plot(spy_cumulative.index, spy_cumulative.values, label="S&P 500 (SPY)", color=BENCHMARK_COLOR, linewidth=2)
+    ax.set_title("Portfolio Performance vs S&P 500", color="white")
+    ax.set_xlabel("Date", color="white")
+    ax.set_ylabel("Cumulative Return", color="white")
+    ax.legend(facecolor=PLOT_BACKGROUND, frameon=False, loc="upper left", labelcolor="white")
+    st.pyplot(fig)
+    plt.close(fig)
+
+
+def plot_risk_contribution(risk_df: pd.DataFrame) -> None:
+    fig, ax = create_dark_chart()
+    ax.bar(risk_df["Asset"], risk_df["Risk Contribution (%)"], color=PORTFOLIO_COLOR)
+    ax.set_title("Individual Asset Risk Contribution", color="white")
+    ax.set_ylabel("Percentage of Portfolio Risk", color="white")
+    st.pyplot(fig)
+    plt.close(fig)
+
+
+def load_benchmark_returns() -> pd.Series | None:
+    spy_prices = download_prices(("SPY",))
+    if spy_prices.empty or "SPY" not in spy_prices.columns:
+        return None
+    return spy_prices["SPY"].pct_change().dropna()
+
+
+def render_app() -> None:
+    st.title("Quant Portfolio Team Builder")
+    st.write("Draft the assets and optimize the risk.")
+
+    st.subheader("Enter the ticker symbols of the assets you want to include in your portfolio (separated by commas):")
+    tickers_input = st.text_input("Ticker Symbols", DEFAULT_TICKERS)
+    tickers = parse_tickers(tickers_input)
+
+    investment_amount = st.number_input(
+        "Enter the total amount you want to invest in the portfolio:",
+        min_value=100.0,
+        value=1000.0,
+        step=100.0,
+    )
+
+    st.subheader("Select your risk tolerance level:")
+    risk_tolerance = st.select_slider(
+        "Risk Tolerance",
+        options=list(RISK_MAPPING.keys()),
+        value="Medium (Balanced)",
+    )
+    target_volatility = RISK_MAPPING[risk_tolerance]
+
+    st.sidebar.subheader("Trading Parameters")
+    fee_percent = (
+        st.sidebar.number_input(
+            "Trading Fee (%)",
+            min_value=0.0,
+            max_value=2.0,
+            value=0.1,
+            step=0.05,
+        )
+        / 100
+    )
+
+    if not st.button("Optimize the tickers"):
+        return
+
+    if len(tickers) < 2:
+        st.error("Enter at least two unique ticker symbols to build a portfolio.")
+        return
+
+    st.write(f"Fetching data for: {', '.join(tickers)}")
+
+    try:
+        price_history, missing_tickers = prepare_price_history(tickers)
+    except Exception as exc:
+        st.error(f"Unable to download price history: {exc}")
+        return
+
+    if missing_tickers:
+        st.warning(f"No usable history was found for: {', '.join(missing_tickers)}")
+
+    if price_history is None or price_history.shape[1] < 2:
+        st.error("Not enough valid ticker history was available to optimize the portfolio.")
+        return
+
+    active_tickers = price_history.columns.tolist()
+    if len(active_tickers) != len(tickers):
+        st.info(f"Continuing with the valid assets only: {', '.join(active_tickers)}")
+
+    st.subheader("Asset Performance Data")
+    plot_price_history(price_history)
+    st.dataframe(price_history)
     st.success("Data loaded. Ready to start optimization math.")
 
-    # calculating the risk and return of the portfolio
     st.subheader("Portfolio Optimization")
+    returns, mean_returns, covariance = annualized_statistics(price_history)
+    if returns.empty:
+        st.error("There was not enough return history to run the optimizer.")
+        return
 
-    # calculating daily returns
-    returns = data.pct_change().dropna()
+    try:
+        _, min_volatility = minimize_volatility(covariance)
+    except ValueError as exc:
+        st.error(f"Unable to solve the minimum-volatility portfolio: {exc}")
+        return
 
-    # calculating mean returns and covariance matrix (risk)
-    mean_returns = returns.mean() * 252 # 252 trading days in a year
-    cov_matrix = returns.cov() * 252
+    if target_volatility + 1e-6 < min_volatility:
+        st.error(
+            f"The selected risk target is infeasible for this basket. "
+            f"Minimum achievable annual volatility is {min_volatility * 100:.2f}%."
+        )
+        return
 
-    def get_portfolio_performance(weights):
-        weights = np.array(weights)
-        p_return = np.sum(mean_returns * weights)
-        p_volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
-        sharpe_ratio = p_return / p_volatility # higher is better
-        return p_return, p_volatility, sharpe_ratio
+    try:
+        baseline_weights, _ = optimize_weights(mean_returns, covariance)
+        optimized_weights, _ = optimize_weights(mean_returns, covariance, target_volatility)
+    except ValueError as exc:
+        st.error(f"Optimization failed: {exc}")
+        return
 
-    # finding the optimal weights using the Sharpe ratio as the objective function
-    def min_func_sharpe(weights):
-        return -get_portfolio_performance(weights)[2] # we want to maximize the Sharpe ratio, so we minimize its negative
-
-    # constraints: weights must sum to 100% (1.0)
-    constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1}, {"type": "ineq", "fun": lambda x: target_vola - get_portfolio_performance(x)[1]}) # adding risk constraint based on user selection
-    bounds = tuple((0, 1) for x in range(len(tickers))) # weights must be between 0 and 1
-    initial_guess = len(tickers) * [1. / len(tickers)] # start with equal weights
-    optimized = minimize(min_func_sharpe, initial_guess, method='SLSQP', bounds=bounds, constraints=constraints)
-    natural_result = minimize(
-        min_func_sharpe,
-        initial_guess,
-        method='SLSQP',
-        bounds=bounds,
-        constraints=({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
-    )
-    initial_max_sharpe_weights = natural_result.x
-    risk_adjusted_weights = minimize(
-        min_func_sharpe,
-        initial_guess,
-        method='SLSQP',
-        bounds=bounds,
-        constraints=constraints
-    )
-    optimized_weights = risk_adjusted_weights.x
-
-    # displaying the optimized portfolio weights and the cash to invest in each asset
+    allocation_df = build_allocation_table(active_tickers, optimized_weights, investment_amount)
     st.write("### Optimized Portfolio Weights:")
-    results_df = pd.DataFrame({
-        'Asset': tickers, 
-        'Weight (%)': (optimized.x * 100).round(2), # convert weights to percentages and round to 2 decimal places
-        'Cash to Invest ($)': (optimized.x * investment_amount).round(2) # calculate the cash to invest in each asset
-    }) 
-    df_display = results_df.sort_values(by='Weight (%)', ascending=False).reset_index(drop=True) # sort by weight and reset index
-    df_display["Weight (%)"] = df_display["Weight (%)"].map("{:.2f}%".format) # format weight as percentage string
-    df_display["Cash to Invest ($)"] = df_display["Cash to Invest ($)"].map("${:,.2f}".format) # format cash to invest as currency string
-    st.table(df_display) 
+    st.table(
+        allocation_df.style.format(
+            {
+                "Weight (%)": "{:.2f}%",
+                "Cash to Invest ($)": "${:,.2f}",
+            }
+        )
+    )
     st.success("Optimization complete.")
-    
-    # calculating a baseline
-    baseline_weights = initial_max_sharpe_weights
 
-    # calculating the difference in weights between the optimized portfolio and the baseline
-    rebalance_df = pd.DataFrame({
-        'Ticker': tickers,
-        'Baseline ($)': (baseline_weights * investment_amount).round(2),
-        'Risk-Adjusted ($)': (optimized_weights * investment_amount).round(2)
-    })
-    rebalance_df['Shift ($)'] = rebalance_df['Risk-Adjusted ($)'] - rebalance_df['Baseline ($)'] # calculating the shift in dollars between the baseline and optimized portfolio
-    rebalance_df['Trading Cost ($)'] = rebalance_df['Shift ($)'].abs() * fee_percent # calculating the trading cost based on the shift and the fee percentage
-    rebalance_df['Net Shift ($)'] = rebalance_df['Shift ($)'] - rebalance_df['Trading Cost ($)'] # calculating the net shift after accounting for trading costs
-
-    # displaying the summary
+    rebalance_df = build_rebalance_table(
+        active_tickers,
+        baseline_weights,
+        optimized_weights,
+        investment_amount,
+        fee_percent,
+    )
     st.subheader("Rebalance Summary")
-    st.write("This table shows how much you would invest in each asset based on the baseline (max Sharpe ratio) vs the risk-adjusted optimized portfolio, along with the shift in dollars.")
-    st.table(rebalance_df.style.format({
-        'Baseline ($)': '${:,.2f}',
-        'Risk-Adjusted ($)': '${:,.2f}',
-        'Shift ($)': '${:,.2f}',
-        'Trading Cost ($)': '${:,.2f}',
-        'Net Shift ($)': '${:,.2f}'
-    }))
+    st.write(
+        "This table shows how much you would invest in each asset based on the baseline "
+        "(max Sharpe ratio) versus the risk-adjusted portfolio, along with the shift in dollars."
+    )
+    st.table(
+        rebalance_df.style.format(
+            {
+                "Baseline ($)": "${:,.2f}",
+                "Risk-Adjusted ($)": "${:,.2f}",
+                "Shift ($)": "${:,.2f}",
+                "Trading Cost ($)": "${:,.2f}",
+                "Net Shift ($)": "${:,.2f}",
+            }
+        )
+    )
 
-    # execution note warning box
-    total_fees = rebalance_df['Trading Cost ($)'].sum()
+    total_fees = float(rebalance_df["Trading Cost ($)"].sum())
     if total_fees > 0.01:
         st.warning(f"Total trading costs for this rebalance will be ${total_fees:,.2f}.")
 
-    # final logic check to determine if the optimized portfolio is significantly different from the baseline and provide insights to the user
     net_invested_capital = investment_amount - total_fees
+    total_shift = float(rebalance_df["Shift ($)"].abs().sum())
+
     st.divider()
-    st.metric("Total Rebalancing Cost", f"${total_fees:,.2f}", delta=f"{fee_percent*100:,.2f}% Fee", delta_color="inverse")
+    st.metric(
+        "Total Rebalancing Cost",
+        f"${total_fees:,.2f}",
+        delta=f"{fee_percent * 100:,.2f}% Fee",
+        delta_color="inverse",
+    )
     st.write(f"**Net Invested Capital after Rebalancing Costs:** ${net_invested_capital:,.2f}")
 
-    # interpreting the data
-    total_shift = rebalance_df['Shift ($)'].abs().sum()
     if total_shift < 0.01:
         st.info(
-            "The optimized portfolio is very similar to the baseline max Sharpe ratio portfolio, with minimal shifts in allocation. "
-            "This suggests that the risk constraint did not significantly alter the optimal weights, and the baseline portfolio already meets the risk tolerance level."
+            "The optimized portfolio is very similar to the baseline max Sharpe ratio portfolio, "
+            "which suggests the selected risk target was already satisfied."
         )
     else:
         st.info(
-            f"The optimized portfolio has a total shift of ${total_shift:,.2f} compared to the baseline max Sharpe ratio portfolio. "
-            "This indicates that the risk constraint led to significant changes in the asset allocations, suggesting that the baseline portfolio may have exceeded the user's risk tolerance level."
+            f"The optimized portfolio shifts ${total_shift:,.2f} versus the baseline max Sharpe "
+            "ratio portfolio, indicating the risk target materially changed the allocations."
         )
 
-    # downloading S&P 500 data for comparison
-    spy_data = yf.download("SPY", period="5y")["Close"].dropna()
+    portfolio_return, portfolio_volatility, sharpe_ratio = portfolio_performance(
+        optimized_weights,
+        mean_returns,
+        covariance,
+    )
 
-    # calculating the cumulative returns for the assets and S&P 500 (starting both at $1.00)
-    portfolio_cumulative = (1 + returns.dot(optimized.x)).cumprod() # cumulative returns of the optimized portfolio
-    spy_cumulative = (1 + spy_data.pct_change().dropna()).cumprod() # cumulative returns of the S&P 500
-
-    # plotting the cumulative returns of the optimized portfolio vs S&P 500
-    st.subheader("Optimized Portfolio vs S&P 500")
-    fig2, ax2 = plt.subplots(figsize=(10, 5), facecolor="#0f1116")
-    ax2.set_facecolor("#0f1116")
-    ax2.plot(portfolio_cumulative, label="Optimized Portfolio", color="#1f77b4", linewidth=2)
-    ax2.plot(spy_cumulative, label="S&P 500 (SPY)", color="#ff7f0e", linewidth=2)
-    ax2.set_title("Portfolio Performance vs S&P 500", color="white")
-    ax2.set_xlabel("Date", color="white")
-    ax2.set_ylabel("Cumulative Return", color="white")
-    ax2.legend(facecolor="#0f1116", frameon=False, loc="upper left", labelcolor="white")
-    ax2.tick_params(colors="white")
-    for spine in ax2.spines.values():
-        spine.set_color("white")
-    st.pyplot(fig2)
-
-    if portfolio_cumulative.iloc[-1].item() > spy_cumulative.iloc[-1].item():
-        st.success("Your optimized portfolio outperformed the S&P 500 over the last 5 years.")
+    benchmark_returns = load_benchmark_returns()
+    portfolio_cumulative = (1 + returns.dot(optimized_weights)).cumprod()
+    if benchmark_returns is not None:
+        comparison_df = pd.concat(
+            [
+                portfolio_cumulative.rename("Portfolio"),
+                (1 + benchmark_returns).cumprod().rename("SPY"),
+            ],
+            axis=1,
+            join="inner",
+        ).dropna()
     else:
-        st.warning("Your optimized portfolio underperformed the S&P 500 over the last 5 years.")
+        comparison_df = pd.DataFrame()
 
-    # getting the final results for the optimized portfolio
-    p_return, p_volatility, sharpe_ratio = get_portfolio_performance(optimized.x)
+    st.subheader("Optimized Portfolio vs S&P 500")
+    if comparison_df.empty:
+        st.info("Benchmark comparison is unavailable because SPY data could not be aligned with the portfolio history.")
+    else:
+        plot_benchmark_comparison(comparison_df["Portfolio"], comparison_df["SPY"])
+        if comparison_df["Portfolio"].iloc[-1] > comparison_df["SPY"].iloc[-1]:
+            st.success("Your optimized portfolio outperformed the S&P 500 over the shared comparison period.")
+        else:
+            st.warning("Your optimized portfolio underperformed the S&P 500 over the shared comparison period.")
 
-    # displaying the portfolio performance metrics
-    st.write(f"### Portfolio Performance:")
+    st.write("### Portfolio Performance:")
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Expected Annual Return", f"{p_return * 100:.2f}%")
+        st.metric("Expected Annual Return", f"{portfolio_return * 100:.2f}%")
     with col2:
-        st.metric("Annual Volatility (Risk)", f"{p_volatility * 100:.2f}%")
+        st.metric("Annual Volatility (Risk)", f"{portfolio_volatility * 100:.2f}%")
     with col3:
-        st.metric("Sharpe Ratio", f"{sharpe_ratio:.2f}")
+        sharpe_display = sharpe_ratio if np.isfinite(sharpe_ratio) else 0.0
+        st.metric("Sharpe Ratio", f"{sharpe_display:.2f}")
 
-    # risk attribution logic to explain the performance metrics in more detail
     st.subheader("Individual Risk Attribution")
-    weights = optimized.x
-    portfolio_vol = get_portfolio_performance(weights)[1] # overall portfolio volatility (risk)
-    marginal_risk = np.dot(cov_matrix, weights) / portfolio_vol # marginal risk contribution of each asset to the overall portfolio risk
+    risk_df = build_risk_contribution_table(active_tickers, optimized_weights, covariance, portfolio_volatility)
+    plot_risk_contribution(risk_df)
 
-    component_risk = weights * marginal_risk # component risk contribution of each asset (weight * marginal risk)
-    percent_contribution = component_risk / portfolio_vol * 100 # percentage contribution to overall portfolio risk
-
-    risk_df = pd.DataFrame({
-        'Asset': tickers,
-        'Risk Contribution (%)': percent_contribution.round(2)
-    }).sort_values(by='Risk Contribution (%)', ascending=False).reset_index(drop=True)
-
-    fig3, ax3 = plt.subplots(figsize=(10, 5), facecolor="#0f1116")
-    ax3.set_facecolor("#0f1116")
-    bars = ax3.bar(risk_df['Asset'], risk_df['Risk Contribution (%)'], color="#1f77b4")
-    ax3.set_title("Individual Asset Risk Contribution", color="white")
-    ax3.set_ylabel("Percentage of Portfolio Risk", color="white")
-    ax3.tick_params(colors="white")
-    for spine in ax3.spines.values():
-        spine.set_color("white")
-    st.pyplot(fig3)
-    
     max_risk_asset = risk_df.iloc[0]["Asset"]
-    max_risk_val = risk_df.iloc[0]["Risk Contribution (%)"]
+    max_risk_value = risk_df.iloc[0]["Risk Contribution (%)"]
+    st.info(
+        f"""
+        **Portfolio Interpretation:**
+        - **Annual Return:** Expected **{portfolio_return * 100:.2f}%** based on 5-year historical trends.
+        - **Volatility:** At **{portfolio_volatility * 100:.2f}%**, this represents the expected annualized price swing.
+        - **Sharpe Ratio:** A score of **{sharpe_display:.2f}** indicates your return efficiency per unit of risk.
+        - **Primary Risk Driver:** **{max_risk_asset}** contributes **{max_risk_value:.2f}%** of total portfolio risk.
+        """
+    )
 
-    # brief explanation of the performance metrics
-    st.info(f"""
-    **Portfolio Interpretation:**
-    - **Annual Return:** Expected **{p_return * 100:.2f}%** based on 5-year historical trends.
-    - **Volatility:** At **{p_volatility * 100:.2f}%**, this represents the 'standard deviation' or the expected price swing.
-    - **Sharpe Ratio:** A score of **{sharpe_ratio:.2f}** indicates your return efficiency per unit of risk.
-    - **Primary Risk Driver:** **{max_risk_asset}** is responsible for **{max_risk_val}%** of your total risk.
-    """)
+
+render_app()
