@@ -1,12 +1,13 @@
 # Quant Portfolio Optimizer (Team Builder)
 
-A Streamlit app for portfolio construction, risk-constrained optimization, and rebalancing analysis. The app pulls historical market data, computes annualized return and volatility statistics, and uses SLSQP optimization to build a maximum-Sharpe portfolio that can also respect a user-selected volatility ceiling.
+An AI-powered Streamlit app for portfolio construction, risk-constrained optimization, and rebalancing analysis. The app pulls historical market data, computes annualized return and volatility statistics, and uses SLSQP optimization to build a maximum-Sharpe portfolio that can also respect a user-selected volatility ceiling.
 
 ## Current State
 
 This project now includes:
 
 - A runnable Streamlit app in `portfolio_builder.py`
+- A built-in chat interface using Streamlit's chat components
 - Python project metadata in `pyproject.toml`
 - Dependency install support in `requirements.txt`
 - A basic repo setup for local virtual environment workflows
@@ -23,6 +24,7 @@ This repository was also updated through a Codex editing pass. That pass injecte
 - Estimates trading costs for the rebalance
 - Compares portfolio performance against `SPY`
 - Breaks down each asset's contribution to total portfolio risk
+- Lets users chat with a portfolio assistant directly on the page
 
 ## Tech Stack
 
@@ -31,6 +33,7 @@ This repository was also updated through a Codex editing pass. That pass injecte
 - **Data Source**: yfinance
 - **Numerical Libraries**: NumPy, Pandas, SciPy
 - **Visualization**: Matplotlib
+- **Chat**: Streamlit chat UI with optional OpenAI integration
 
 ## Setup
 
@@ -59,6 +62,14 @@ pip install -r requirements.txt
 ```bash
 streamlit run portfolio_builder.py
 ```
+
+5. Optional: enable OpenAI-backed chatbot responses:
+
+```bash
+export OPENAI_API_KEY=your_api_key_here
+```
+
+If no API key is configured, the app still exposes the chatbox and falls back to a built-in portfolio assistant.
 
 ## Optimization Model
 
