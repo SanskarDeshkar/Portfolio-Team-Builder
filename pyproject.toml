@@ -9,6 +9,7 @@ dependencies = [
     "numpy",
     "openai",
     "pandas",
+    "python-dotenv",
     "scipy",
     "streamlit",
     "yfinance",
