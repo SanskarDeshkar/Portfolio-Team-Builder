@@ -8,11 +8,14 @@ This project now includes:
 
 - A runnable Streamlit app in `portfolio_builder.py`
 - A built-in chat interface using Streamlit's chat components
+- Local Ollama-backed chatbot responses with a built-in fallback assistant
+- Sidebar trading-fee controls
+- Dark themed charts, centered result tables, and responsive layout styling
 - Python project metadata in `pyproject.toml`
 - Dependency install support in `requirements.txt`
 - A basic repo setup for local virtual environment workflows
 
-This repository was also updated through a Codex editing pass. That pass injected a cleanup and hardening layer into the project, especially inside `portfolio_builder.py`, without changing the app's core purpose.
+The app has also been hardened around invalid tickers, missing benchmark data, infeasible volatility targets, and optimizer failures so that common data or market-data issues produce user-facing messages instead of uncaught exceptions.
 
 ## What The App Does
 
@@ -24,7 +27,9 @@ This repository was also updated through a Codex editing pass. That pass injecte
 - Estimates trading costs for the rebalance
 - Compares portfolio performance against `SPY`
 - Breaks down each asset's contribution to total portfolio risk
-- Lets users chat with a portfolio assistant directly on the page
+- Lets users chat with a portfolio assistant directly in the sidebar
+- Uses local Ollama AI by default when available
+- Falls back to a local rule-based assistant if Ollama is unavailable or the OpenAI client package is not installed
 
 ## Tech Stack
 
@@ -33,7 +38,8 @@ This repository was also updated through a Codex editing pass. That pass injecte
 - **Data Source**: yfinance
 - **Numerical Libraries**: NumPy, Pandas, SciPy
 - **Visualization**: Matplotlib
-- **Chat**: Streamlit chat UI with optional OpenAI integration
+- **Chat**: Streamlit sidebar chat UI with local Ollama support through an OpenAI-compatible client
+- **Configuration**: python-dotenv, Streamlit secrets, and environment variables
 
 ## Setup
 
@@ -63,13 +69,57 @@ pip install -r requirements.txt
 streamlit run portfolio_builder.py
 ```
 
-5. Optional: enable OpenAI-backed chatbot responses:
+5. Optional: enable local Ollama chatbot responses:
+
+Install and start Ollama, then pull the local model used by the app:
+
+```bash
+ollama pull llama3.2
+```
+
+Keep the Ollama app or server running in the background. The Streamlit chatbot connects to Ollama at:
+
+```text
+http://localhost:11434/v1/
+```
+
+When no personal OpenAI API key is configured, the app uses Ollama with `llama3.2` for AI chatbot responses. If Ollama is not running, the app falls back to the built-in rule-based portfolio assistant.
+
+6. Optional: use your own OpenAI API key instead of local Ollama:
 
 ```bash
 export OPENAI_API_KEY=your_api_key_here
 ```
 
-If no API key is configured, the app still exposes the chatbox and falls back to a built-in portfolio assistant.
+You can also place the key in a local `.env` file:
+
+```bash
+OPENAI_API_KEY=your_api_key_here
+```
+
+Or configure it through Streamlit secrets:
+
+```toml
+OPENAI_API_KEY = "your_api_key_here"
+```
+
+The app also includes a sidebar button for entering a personal API key at runtime. If a key is configured, the chatbot uses OpenAI instead of local Ollama.
+
+7. Optional: choose a different OpenAI chat model for the personal-key mode:
+
+```bash
+export OPENAI_CHAT_MODEL=gpt-5-mini
+```
+
+If `OPENAI_CHAT_MODEL` is not set, the app defaults to `gpt-5-mini`.
+
+## Local Checks
+
+Run a quick syntax check before committing changes:
+
+```bash
+python3 -m py_compile portfolio_builder.py
+```
 
 ## Optimization Model
 
@@ -95,16 +145,21 @@ $$
 When the optimization succeeds, the app renders:
 
 - Historical price charts for the selected assets
+- Filterable annual price-history summaries
 - Optimized portfolio weights
 - Dollar allocation per asset
 - Baseline vs. risk-adjusted rebalance summary
 - Estimated trading cost impact
-- Portfolio vs. `SPY` cumulative performance comparison
+- Portfolio vs. `SPY` relative performance comparison
+- Alpha, beta, benchmark-relative Sharpe, and tracking-risk metrics
 - Annual return, volatility, and Sharpe metrics
 - Individual asset risk contribution chart
+- Plain-English interpretation of return, volatility, Sharpe ratio, risk concentration, and capital shift
 
 ## Notes
 
 - The optimization is long-only, with weights bounded between `0` and `1`
 - All portfolio statistics are based on historical price data and should not be treated as forward-looking guarantees
 - The benchmark comparison depends on `SPY` data being available and alignable with the selected portfolio history
+- The constrained optimization will stop with a clear message if the selected volatility target is lower than the basket's minimum achievable volatility
+- The default AI chatbot path expects Ollama to be running locally with the `llama3.2` model pulled
