@@ -1,4 +1,5 @@
 import os
+from html import escape
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -67,26 +68,57 @@ def apply_sidebar_styles() -> None:
             padding-right: clamp(1.25rem, 4vw, 3.5rem);
         }}
 
-        div[data-testid="stAlert"] {{
-            align-items: flex-start;
+        .portfolio-status-message {{
+            align-items: center;
+            border: 1px solid var(--status-border);
+            border-left: 0.35rem solid var(--status-accent);
+            border-radius: 0.5rem;
+            box-sizing: border-box;
+            color: var(--status-text);
+            display: flex;
+            font-size: 1rem;
+            font-weight: 500;
+            justify-content: flex-start;
+            line-height: 1.45;
+            margin: 0.5rem 0 1rem;
+            min-height: 3.25rem;
             overflow: visible;
-            padding-top: 1rem;
-            padding-bottom: 1.15rem;
+            padding: 0.85rem 1rem;
+            width: 100%;
         }}
 
-        div[data-testid="stAlert"] div[data-testid="stMarkdownContainer"] {{
-            overflow: visible;
-            padding-bottom: 0.15rem;
-            line-height: 1.55;
+        .portfolio-status-message span {{
+            display: block;
+            margin: 0;
+            padding: 0;
         }}
 
-        div[data-testid="stAlert"] div[data-testid="stMarkdownContainer"] p,
-        div[data-testid="stAlert"] div[data-testid="stMarkdownContainer"] li {{
-            line-height: 1.55;
+        .portfolio-status-success {{
+            --status-accent: #22c55e;
+            --status-border: rgba(34, 197, 94, 0.45);
+            --status-text: #dcfce7;
+            background: rgba(34, 197, 94, 0.12);
         }}
 
-        div[data-testid="stAlert"] div[data-testid="stMarkdownContainer"] > :last-child {{
-            margin-bottom: 0;
+        .portfolio-status-warning {{
+            --status-accent: #f59e0b;
+            --status-border: rgba(245, 158, 11, 0.5);
+            --status-text: #fef3c7;
+            background: rgba(245, 158, 11, 0.12);
+        }}
+
+        .portfolio-status-error {{
+            --status-accent: #ef4444;
+            --status-border: rgba(239, 68, 68, 0.5);
+            --status-text: #fee2e2;
+            background: rgba(239, 68, 68, 0.12);
+        }}
+
+        .portfolio-status-info {{
+            --status-accent: #38bdf8;
+            --status-border: rgba(56, 189, 248, 0.45);
+            --status-text: #e0f2fe;
+            background: rgba(56, 189, 248, 0.12);
         }}
 
         div[data-testid="stTabs"] {{
@@ -133,6 +165,85 @@ def apply_sidebar_styles() -> None:
             margin-bottom: 0;
         }}
 
+        .portfolio-help-widget {{
+            bottom: 1.25rem;
+            position: fixed;
+            right: 1.25rem;
+            z-index: 9999;
+        }}
+
+        .portfolio-help-widget summary {{
+            align-items: center;
+            background: #f97316;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 999px;
+            box-shadow: 0 0.75rem 1.75rem rgba(0, 0, 0, 0.35);
+            color: white;
+            cursor: pointer;
+            display: flex;
+            font-size: 1.45rem;
+            font-weight: 800;
+            height: 3.25rem;
+            justify-content: center;
+            line-height: 1;
+            list-style: none;
+            transition: background 150ms ease, transform 150ms ease;
+            width: 3.25rem;
+        }}
+
+        .portfolio-help-widget summary::-webkit-details-marker {{
+            display: none;
+        }}
+
+        .portfolio-help-widget summary:hover {{
+            background: #fb923c;
+            transform: translateY(-1px);
+        }}
+
+        .portfolio-help-panel {{
+            background: #111827;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 0.5rem;
+            bottom: 4rem;
+            box-shadow: 0 1.25rem 3rem rgba(0, 0, 0, 0.45);
+            color: #f9fafb;
+            max-height: min(72vh, 42rem);
+            overflow-y: auto;
+            padding: 1.1rem 1.2rem;
+            position: absolute;
+            right: 0;
+            width: min(28rem, calc(100vw - 2.5rem));
+        }}
+
+        .portfolio-help-panel h2 {{
+            font-size: 1.15rem;
+            line-height: 1.3;
+            margin: 0 0 0.75rem;
+        }}
+
+        .portfolio-help-panel h3 {{
+            color: #fdba74;
+            font-size: 0.95rem;
+            line-height: 1.35;
+            margin: 1rem 0 0.35rem;
+        }}
+
+        .portfolio-help-panel p,
+        .portfolio-help-panel li {{
+            color: #d1d5db;
+            font-size: 0.88rem;
+            line-height: 1.5;
+        }}
+
+        .portfolio-help-panel p {{
+            margin: 0 0 0.65rem;
+        }}
+
+        .portfolio-help-panel ul {{
+            margin: 0;
+            padding-left: 1.1rem;
+        }}
+
         @media (max-width: 48rem) {{
             .block-container {{
                 padding-left: 1rem;
@@ -150,6 +261,22 @@ def apply_sidebar_styles() -> None:
                 min-width: 7.25rem;
                 padding-left: 0.85rem;
                 padding-right: 0.85rem;
+            }}
+
+            .portfolio-help-widget {{
+                bottom: 1rem;
+                right: 1rem;
+            }}
+
+            .portfolio-help-widget summary {{
+                height: 3rem;
+                width: 3rem;
+            }}
+
+            .portfolio-help-panel {{
+                bottom: 3.75rem;
+                max-height: 68vh;
+                width: calc(100vw - 2rem);
             }}
         }}
         </style>
@@ -239,6 +366,74 @@ def render_narrow_chart(fig: plt.Figure) -> None:
 def render_info_panel(markdown_text: str) -> None:
     with st.container(border=True):
         st.markdown(markdown_text)
+
+
+def render_status_message(message: str, variant: str) -> None:
+    allowed_variants = {"success", "warning", "error", "info"}
+    status_variant = variant if variant in allowed_variants else "info"
+    st.markdown(
+        (
+            f'<div class="portfolio-status-message portfolio-status-{status_variant}">'
+            f"<span>{escape(message)}</span>"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def render_help_widget() -> None:
+    st.markdown(
+        """
+        <details class="portfolio-help-widget">
+        <summary title="How the optimizer works" aria-label="How the optimizer works">?</summary>
+        <section class="portfolio-help-panel">
+        <h2>How This Optimizer Works</h2>
+            <p>
+            The app turns your ticker list, investment amount, risk tolerance, and trading fee into a
+            historically optimized portfolio. It uses recent market data, estimates return and risk, then
+            solves for portfolio weights that balance return against volatility.
+            </p>
+
+        <h3>1. Market Data</h3>
+        <ul>
+        <li>Downloads about five years of adjusted daily prices with yfinance.</li>
+        <li>Removes tickers with no usable history and aligns all remaining assets to shared dates.</li>
+        <li>Calculates daily percentage returns from the cleaned price table.</li>
+        </ul>
+
+        <h3>2. Return And Risk Estimates</h3>
+        <ul>
+        <li>Expected return is the average daily return multiplied by 252 trading days.</li>
+        <li>Volatility is based on the annualized covariance matrix of daily returns.</li>
+        <li>Sharpe ratio is expected annual return divided by annual volatility.</li>
+        </ul>
+
+        <h3>3. Optimization</h3>
+        <ul>
+        <li>The baseline portfolio maximizes Sharpe ratio.</li>
+        <li>The risk-adjusted portfolio also enforces your selected volatility target.</li>
+        <li>Weights are long-only, bounded from 0% to 100%, and must add up to 100%.</li>
+        <li>If your risk target is below the basket's minimum achievable volatility, the app stops and explains why.</li>
+        </ul>
+
+        <h3>4. Outputs</h3>
+        <ul>
+        <li>Allocation shows each optimized asset weight and dollar amount.</li>
+        <li>Benchmark compares portfolio returns with SPY over the overlapping history.</li>
+        <li>Risk attribution estimates how much each asset contributes to total portfolio volatility.</li>
+        <li>Rebalance compares the baseline and risk-adjusted portfolios and estimates trading costs.</li>
+        </ul>
+
+        <h3>Important Limits</h3>
+        <p>
+        The calculations are based on historical data. They are useful for analysis, but they do not
+        predict future returns or guarantee lower risk.
+        </p>
+        </section>
+        </details>
+        """,
+unsafe_allow_html=True,
+)
 
 
 def parse_tickers(raw_input: str) -> list[str]:
@@ -845,7 +1040,7 @@ def run_optimizer(
     fee_percent: float,
 ) -> None:
     if len(tickers) < 2:
-        st.error("Enter at least two unique ticker symbols to build a portfolio.")
+        render_status_message("Enter at least two unique ticker symbols to build a portfolio.", "error")
         return
 
     st.write(f"Fetching data for: {', '.join(tickers)}")
@@ -853,36 +1048,37 @@ def run_optimizer(
     try:
         price_history, missing_tickers = prepare_price_history(tickers)
     except Exception as exc:
-        st.error(f"Unable to download price history: {exc}")
+        render_status_message(f"Unable to download price history: {exc}", "error")
         return
 
     if missing_tickers:
-        st.warning(f"No usable history was found for: {', '.join(missing_tickers)}")
+        render_status_message(f"No usable history was found for: {', '.join(missing_tickers)}", "warning")
 
     if price_history is None or price_history.shape[1] < 2:
-        st.error("Not enough valid ticker history was available to optimize the portfolio.")
+        render_status_message("Not enough valid ticker history was available to optimize the portfolio.", "error")
         return
 
     active_tickers = price_history.columns.tolist()
     asset_color_map = get_asset_color_map(active_tickers)
     if len(active_tickers) != len(tickers):
-        st.info(f"Continuing with the valid assets only: {', '.join(active_tickers)}")
+        render_status_message(f"Continuing with the valid assets only: {', '.join(active_tickers)}", "info")
 
     returns, mean_returns, covariance = annualized_statistics(price_history)
     if returns.empty:
-        st.error("There was not enough return history to run the optimizer.")
+        render_status_message("There was not enough return history to run the optimizer.", "error")
         return
 
     try:
         _, min_volatility = minimize_volatility(covariance)
     except ValueError as exc:
-        st.error(f"Unable to solve the minimum-volatility portfolio: {exc}")
+        render_status_message(f"Unable to solve the minimum-volatility portfolio: {exc}", "error")
         return
 
     if target_volatility + 1e-6 < min_volatility:
-        st.error(
+        render_status_message(
             f"The selected risk target is infeasible for this basket. "
-            f"Minimum achievable annual volatility is {min_volatility * 100:.2f}%."
+            f"Minimum achievable annual volatility is {min_volatility * 100:.2f}%.",
+            "error",
         )
         return
 
@@ -890,7 +1086,7 @@ def run_optimizer(
         baseline_weights, _ = optimize_weights(mean_returns, covariance)
         optimized_weights, _ = optimize_weights(mean_returns, covariance, target_volatility)
     except ValueError as exc:
-        st.error(f"Optimization failed: {exc}")
+        render_status_message(f"Optimization failed: {exc}", "error")
         return
 
     allocation_df = build_allocation_table(active_tickers, optimized_weights, investment_amount)
@@ -944,7 +1140,7 @@ def run_optimizer(
     relative_risk_contribution = relative_risk_df.iloc[0]["Risk Contribution (%)"]
     relative_risk_allocation = relative_risk_df.iloc[0]["Allocation (%)"]
 
-    st.success("Optimization complete.")
+    render_status_message("Optimization complete.", "success")
     overview_tab, prices_tab, allocation_tab, benchmark_tab, risk_tab, rebalance_tab = st.tabs(
         ["Overview", "Prices", "Allocation", "Benchmark", "Risk", "Rebalance"]
     )
@@ -990,7 +1186,7 @@ def run_optimizer(
         plot_price_history(filtered_price_history, asset_color_map)
         filtered_returns = filtered_price_history.pct_change().dropna()
         if filtered_returns.empty:
-            st.info("There is not enough data in this period to calculate return statistics.")
+            render_status_message("There is not enough data in this period to calculate return statistics.", "info")
         else:
             price_summary = pd.DataFrame(
                 {
@@ -1041,7 +1237,10 @@ def run_optimizer(
             "chart shows when your portfolio is ahead or behind."
         )
         if not benchmark_analysis or comparison_df.empty:
-            st.info("Benchmark comparison is unavailable because SPY data could not be aligned with the portfolio history.")
+            render_status_message(
+                "Benchmark comparison is unavailable because SPY data could not be aligned with the portfolio history.",
+                "info",
+            )
         else:
             metric_col1, metric_col2, metric_col3 = st.columns(3)
             with metric_col1:
@@ -1054,9 +1253,15 @@ def run_optimizer(
             st.write("### Relative Performance Spread")
             plot_benchmark_comparison(comparison_df["Portfolio"], comparison_df["SPY"])
             if benchmark_analysis["portfolio_annual_return"] > benchmark_analysis["benchmark_annual_return"]:
-                st.success("The optimized portfolio has a higher annualized return than the S&P 500 over the shared period.")
+                render_status_message(
+                    "The optimized portfolio has a higher annualized return than the S&P 500 over the shared period.",
+                    "success",
+                )
             else:
-                st.warning("The optimized portfolio has a lower annualized return than the S&P 500 over the shared period.")
+                render_status_message(
+                    "The optimized portfolio has a lower annualized return than the S&P 500 over the shared period.",
+                    "warning",
+                )
 
     with risk_tab:
         st.write("### Individual Risk Attribution")
@@ -1106,7 +1311,7 @@ def run_optimizer(
         )
         st.write(f"**Net Invested Capital after Rebalancing Costs:** ${net_invested_capital:,.2f}")
         if total_fees > 0.01:
-            st.warning(f"Total trading costs for this rebalance will be ${total_fees:,.2f}.")
+            render_status_message(f"Total trading costs for this rebalance will be ${total_fees:,.2f}.", "warning")
 
         if total_shift < 0.01:
             render_info_panel(
@@ -1140,25 +1345,6 @@ def render_app() -> None:
     st.title("Quant Portfolio Team Builder")
     st.write("Draft the assets and optimize the risk.")
 
-    st.subheader("Enter the ticker symbols of the assets you want to include in your portfolio (separated by commas):")
-    tickers_input = st.text_input("Ticker Symbols", DEFAULT_TICKERS)
-    tickers = parse_tickers(tickers_input)
-
-    investment_amount = st.number_input(
-        "Enter the total amount you want to invest in the portfolio:",
-        min_value=100.0,
-        value=1000.0,
-        step=100.0,
-    )
-
-    st.subheader("Select your risk tolerance level:")
-    risk_tolerance = st.select_slider(
-        "Risk Tolerance",
-        options=list(RISK_MAPPING.keys()),
-        value="Medium (Balanced)",
-    )
-    target_volatility = RISK_MAPPING[risk_tolerance]
-
     st.sidebar.subheader("Trading Parameters")
     fee_percent = (
         st.sidebar.number_input(
@@ -1171,7 +1357,29 @@ def render_app() -> None:
         / 100
     )
 
-    if st.button("Optimize the tickers"):
+    with st.form("portfolio_optimizer_form", enter_to_submit=True):
+        st.subheader("Enter the ticker symbols of the assets you want to include in your portfolio (separated by commas):")
+        tickers_input = st.text_input("Ticker Symbols", DEFAULT_TICKERS)
+        tickers = parse_tickers(tickers_input)
+
+        investment_amount = st.number_input(
+            "Enter the total amount you want to invest in the portfolio:",
+            min_value=100.0,
+            value=1000.0,
+            step=100.0,
+        )
+
+        st.subheader("Select your risk tolerance level:")
+        risk_tolerance = st.select_slider(
+            "Risk Tolerance",
+            options=list(RISK_MAPPING.keys()),
+            value="Medium (Balanced)",
+        )
+        target_volatility = RISK_MAPPING[risk_tolerance]
+
+        submitted = st.form_submit_button("Optimize the tickers")
+
+    if submitted:
         st.session_state["optimizer_inputs"] = {
             "tickers": tickers,
             "investment_amount": investment_amount,
@@ -1190,6 +1398,7 @@ def render_app() -> None:
         run_optimizer(**optimizer_inputs)
 
     render_chatbot()
+    render_help_widget()
 
 
 render_app()
